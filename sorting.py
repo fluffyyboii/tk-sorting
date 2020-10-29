@@ -1200,32 +1200,6 @@ def BuildUpInsertionSort(arr):
         for j in range(i):
             arr.step(j, i)
 
-@Sort("Buffer Demo")
-def BufferDemoSort(arr):
-    def insertion(start, stop):
-        for i in range(start, stop - 1):
-            while i >= start and arr.compare(i, i + 1) == 1:
-                arr.swap(i, i + 1)
-                i -= 1
-    insertion(8, 16)
-    buffer, left, right = 0, 8, 16
-    while left < 16 and right < 32:
-        if arr.compare(left, right) == 1:
-            arr.swap(buffer, right)
-            right += 1
-        else:
-            arr.swap(buffer, left)
-            left += 1
-        buffer += 1
-
-@Shuffle("Buffer Demo")
-def BufferDemoShuffle(arr):
-    RandomUnique(arr)
-    for i in range(16, 31):
-        while i >= 16 and arr.compare(i, i + 1) == 1:
-            arr.swap(i, i + 1)
-            i -= 1
-
 # ------------------------------------------------------------------------------
 
 def ON_START_UP():
