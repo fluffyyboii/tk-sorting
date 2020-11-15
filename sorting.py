@@ -19,7 +19,7 @@ ICON_FROMFILE = False
 LOAD_ICON = False
 MIN_FREQ = 19
 MAX_FREQ = 590
-VOLUME = 0.2
+VOLUME = 0.15
 
 import tkinter as tk
 
@@ -47,11 +47,10 @@ root.resizable(False, False)
 class CancelSort(KeyboardInterrupt):
     "The sort was cancelled by the user."
 
-class Array:
+class Array(list):
     def __init__(self, lst):
-        self.lst = lst
-        self.start = 0
-        self.stop = len(lst)
+        super().__init__(lst)
+        self.length = super().__len__()
         self.comps = 0
         self.swaps = 0
         self.writes = 0
@@ -59,8 +58,11 @@ class Array:
         self.frames = 0
         self.passed = 0
         self.sounds = []
-        self.max_item = max(lst)
+        self.max_item = max(self)
         self.aux_writes = 0
+        self.draw_stats = [{"value": None, "color": None, "id": None}
+                           for i in range(len(self))]
+        self.first = True
     def stat_check(func):
         def decorator(*args, **kwargs):
             try:
@@ -73,22 +75,20 @@ class Array:
                 raise
         return decorator
     @stat_check
+    def __len__(self):
+        return self.length
+    @stat_check
     def __getitem__(self, index):
-        if type(index) == int:
-            return self.lst[index + self.start]
-        new = self
-        new.start = index.start or 0
-        new.stop = index.stop or self.stop
-        new.comps = self.comps
-        new.swaps = self.swaps
-        new.writes = self.writes
-        return new
+        return super().__getitem__(index)
     @stat_check
     def __setitem__(self, index, value):
-        self.lst[index] = value
+        super().__setitem__(index, value)
+    @stat_check
+    def __delitem__(self, index):
+        raise TypeError("cannot delete item of Array")
     @stat_check
     def __len__(self):
-        return self.stop
+        return super().__len__()
     # No stat check for sounds
     def clear_sounds(self):
         for i in self.sounds:
@@ -100,8 +100,11 @@ class Array:
         self.clear_sounds()
         if self.passed >= self.frames:
             self.passed = -1
-            canvas.delete("all")
+            if self.first:
+                canvas.delete("all")
+                self.first = False
             for i in range(len(self)):
+                stats = self.draw_stats[i]
                 if done and i <= colored[0]:
                     color = "#0e0"
                 elif i in colored:
@@ -121,10 +124,18 @@ class Array:
                         pass
                     else:
                         color = "black"
-                canvas.create_rectangle(
-                    i * (800 / len(self)), -((600 * (self[i] / self.max_item))
-                    - 600), (i + 1) * (800 / len(self)), 600, outline=color,
-                    fill=color)
+                if stats["color"] != color:
+                    rect_id = stats["id"]
+                    if stats["value"] == self[i]:
+                        canvas.itemconfig(rect_id, outline=color, fill=color)
+                        self.draw_stats[i]["color"] = color
+                    else:
+                        canvas.delete(rect_id)
+                        self.draw_stats[i] = {"color": color, "value": self[i],
+                            "id": canvas.create_rectangle(i * (800 / len(self)),
+                            -((600 * (self[i] / self.max_item)) - 600), (i + 1)
+                            * (800 / len(self)), 600, outline=color, fill=color)
+                        }
             canvas.update()
         self.passed += 1
     @stat_check
@@ -142,7 +153,7 @@ class Array:
         self.swaps += 1
         writes.config(text="Writes: %s" % self.writes)
         swaps.config(text="Swaps: %s" % self.swaps)
-        self.lst[i1], self.lst[i2] = self.lst[i2], self.lst[i1]
+        self[i1], self[i2] = self[i2], self[i1]
         if refresh:
             self.refresh(i1, i2)
     @stat_check
@@ -150,9 +161,9 @@ class Array:
         "Writes value n to index i."
         self.writes += 1
         writes.config(text="Writes: %s" % self.writes)
-        self.lst[i] = n
+        self[i] = n
         if update_max:
-            self.max_item = max(self.lst)
+            self.max_item = max(self)
         if refresh:
             self.refresh(i)
     @stat_check
@@ -230,8 +241,16 @@ class Array:
     def step(self, lo, hi):
         if self.compare(lo, hi) == 1:
             self.swap(lo, hi)
-    def __repr__(self):
-        return repr(self.lst)
+    @stat_check
+    def incr_comps(self):
+        self.comps += 1
+        comps.config(text="Comparisons: %s" % self.comps)
+    @stat_check
+    def append(self, val):
+        raise TypeError("cannot append to Array")
+    @stat_check
+    def pop(self, index=-1):
+        raise TypeError("cannot pop from Array")
 
 sort_dict = {}
 def Sort(name=None, sort_type="<NULL>", limit=None, stable="<NULL>",
@@ -358,7 +377,6 @@ it to finish.\nContinue?") == False:
     arr = Array(list(range(1, length + 1)))
     arr.frames = orig_frames = float(dropped.get())
     reset_stats(arr)
-    arr.max_item = max(arr.lst)
     try:
         shuffle_dict[shuffle_selected.get()](arr)
     except BaseException as err:
@@ -492,7 +510,7 @@ running = False
 @Shuffle("Random Unique")
 def RandomUnique(arr):
     for i in range(1, len(arr)):
-        arr.swap(i, randrange(0, i + 1))
+        arr.swap(i, randrange(i + 1))
 
 @Shuffle("Already Sorted")
 def AlreadySorted(arr):
@@ -621,6 +639,16 @@ def MaxHeapified(arr):
     for node in range(len(arr) - 1, -1, -1):
         sift_down(node)
 
+@Shuffle("Bit Reversed")
+def BitReversed(arr):
+    minimum = min(arr)
+    length = len(bin(max(arr) - minimum)) - 2
+    for i in range(len(arr)):
+        binary = bin(arr[i] - minimum)[2:]
+        while len(binary) < length:
+            binary = "0" + binary
+        arr.write(i, eval("0b" + binary[::-1]) + minimum)
+
 def MinHeapified(arr, reverse=False):
     if reverse:
         arr.reverse()
@@ -642,9 +670,31 @@ def MinHeapified(arr, reverse=False):
 def MinHeapifiedShuffle(arr):
     MinHeapified(arr, reverse=True)
 
+@Shuffle("Modulo Shuffle")
+def ModuloShuffle(arr):
+    for i in range(1, len(arr) + 1):
+        arr.write(i - 1, len(arr) % i + 1, update_max=True)
+
+@Shuffle("Half Reversed")
+def HalfReversed(arr):
+    i, j = 0, len(arr) - 1
+    while i < j:
+        arr.write(j, arr[i], update_max=True)
+        j -= 1
+        i += 1
+
+@Shuffle("Factors")
+def Factors(arr):
+    for i in range(len(arr), 0, -1):
+        factors = 1 + (i > 1)
+        for j in range(2, i // 2 + 1):
+            if not i % j:
+                factors += 1
+        arr.write(i - 1, factors, update_max=True)
+
 @Sort("Bubble Sort", "Comparison", 2048, True, "n^2", "n^2", "n^2", 1, 1, 1)
 def BubbleSort(arr):
-    for i in range(len(arr)):
+    for i in range(len(arr) - 1):
         for j in range(len(arr) - 1):
             if arr.compare(j, j + 1) == 1:
                 arr.swap(j, j + 1)
@@ -761,22 +811,21 @@ def SnuffleSort(arr):
 @Sort("Circle Sort", "Comparison", 2048)
 def CircleSort(arr):
     def wrapper(start, stop):
-        j = stop
-        for i in range(start, (stop - start + 1) // 2 + start):
-            if arr.compare(i, j) == 1:
-                global swapped
-                swapped = True
-                arr.swap(i, j)
-            j -= 1
-        if stop - start + 1 > 2:
+        if stop - start >= 2:
+            i, j = start, stop - 1
+            while i < j:
+                if arr.compare(i, j) == 1:
+                    nonlocal swapped
+                    swapped = True
+                    arr.swap(i, j)
+                i += 1
+                j -= 1
             wrapper(start, (stop - start) // 2 + start)
             wrapper((stop - start) // 2 + start, stop)
-    global swapped
     swapped = True
     while swapped:
         swapped = False
-        wrapper(0, len(arr) - 1)
-    del swapped
+        wrapper(0, len(arr))
 
 @Sort("Bozo Sort", "Comparison", 6)
 def BozoSort(arr):
@@ -915,7 +964,7 @@ integers.")
 
 @Sort("Shell Sort")
 def ShellSort(arr):
-    gap = len(arr) - 1
+    gap = len(arr) // 2
     while gap:
         for i in range(0, len(arr) - gap):
             while arr.compare(i, i + gap) == 1 and i >= 0:
@@ -1082,8 +1131,8 @@ def SelectionMergeSort(arr):
                     new = j
             if new != i:
                 arr.swap(i, new)
-            if new == last - 1 and last < stop:
-                last += 1
+                if new == last - 1 and last < stop:
+                    last += 1
     wrapper(0, len(arr))
 
 @Sort("Selection Heap Sort")
@@ -1199,6 +1248,373 @@ def BuildUpInsertionSort(arr):
     for i in range(1, len(arr)):
         for j in range(i):
             arr.step(j, i)
+
+@Sort("Binary Insertion Sort")
+def BinaryInsertionSort(arr):
+    for i in range(1, len(arr)):
+        left, right = 0, i
+        while left < right:
+            middle = left + ((right - left) // 2)
+            comp = arr.compare(middle, i)
+            if comp == 1:
+                right = middle
+            elif comp == -1:
+                left = middle + 1
+            else:
+                left = right = middle
+        for j in range(i, left, -1):
+            arr.swap(j - 1, j)
+
+@Sort("Stable Binary Insertion Sort")
+def StableBinaryInsertionSort(arr):
+    for i in range(1, len(arr)):
+        left, right = 0, i
+        while left < right:
+            middle = left + ((right - left) // 2)
+            if arr.compare(middle, i) == 1:
+                right = middle
+            else:
+                left = middle + 1
+        for j in range(i, left, -1):
+            arr.swap(j - 1, j)
+
+@Sort("Unsorted Binary Insertion Sort")
+def UnsortedBinaryInsertionSort(arr):
+    def bin_search(stop):
+        left, right = 0, stop
+        while left < right:
+            middle = left + ((right - left) // 2)
+            if arr.compare(middle, stop) == 1:
+                right = middle
+            else:
+                left = middle + 1
+        for i in range(stop, left, -1):
+            arr.swap(i - 1, i)
+        return left
+    done = False
+    while not done:
+        done = True
+        current = len(arr) - 1
+        while current:
+            if bin_search(current) == current:
+                current -= 1
+            else:
+                done = False
+
+@Sort("Quick Sort (Average Pivots)")
+def QuickSortAveragePivots(arr):
+    def wrapper(start, stop):
+        length = stop - start
+        if length >= 2:
+            average = 0
+            for i in range(start, stop):
+                average += arr.get(i)
+            left = start
+            swap = False
+            for right in range(start, stop):
+                arr.refresh(right)
+                arr.incr_comps()
+                if average > arr[right] * length:
+                    if left != right:
+                        arr.swap(left, right)
+                    swap = True
+                    left += 1
+            if swap:   # prevents softlock on no unique
+                wrapper(start, left)
+                wrapper(left, stop)
+    wrapper(0, len(arr))
+
+@Sort("Partition Merge Sort")
+def PartitionMergeSort(arr):   # only works on power of 2 lengths, linear dist
+    def partition(start, stop):
+        length = stop - start
+        if length >= 2:
+            average = 0
+            for i in range(start, stop):
+                average += arr.get(i)
+            left = start
+            for right in range(start, stop):
+                arr.refresh(right)
+                arr.incr_comps()
+                if average > arr[right] * length:
+                    if left != right:
+                        arr.swap(left, right)
+                    left += 1
+    def pairwise(buffer, left, right):
+        comp = arr.compare(left, right)
+        if comp == 1:
+            arr.swap(buffer, right)
+            arr.swap(buffer + 1, left)
+        else:
+            arr.swap(buffer, left)
+            arr.swap(buffer + 1, right)
+    def first_merges(buffer, stop):
+        while buffer + 3 < stop:
+            left = buffer + 2
+            right = left + 1
+            pairwise(buffer, left, right)
+            buffer += 2
+    def merge(buffer, left, right, stop):
+        orig_left, orig_right = left, right
+        while left < orig_right and right < stop:
+            if arr.compare(left, right) == 1:
+                arr.swap(buffer, right)
+                right += 1
+            else:
+                arr.swap(buffer, left)
+                left += 1
+            buffer += 1
+        while right < stop:
+            arr.swap(buffer, right)
+            right += 1
+            buffer += 1
+    def merges(buffer_start, buffer_stop, stop):
+        diff = buffer_stop - buffer_start
+        while buffer_start + (diff * 4) - 1 < stop:
+            merge(buffer_start, buffer_stop, buffer_stop + diff, buffer_stop
+                + (diff * 2))
+            buffer_start += diff * 2
+            buffer_stop += diff * 2
+    def merge_back(stop, left, right, buffer):
+        orig_left, orig_right = left, right
+        while left > stop and right > orig_left:
+            if arr.compare(left, right) == -1:
+                arr.swap(right, buffer)
+                right -= 1
+            else:
+                arr.swap(left, buffer)
+                left -= 1
+            buffer -= 1
+        while left > stop:
+            arr.swap(left, buffer)
+            left -= 1
+            buffer -= 1
+    def wrapper(buffer, start, stop):
+        if buffer == start:
+            arr.step(start, stop)
+            arr.step(start + 1, stop + 1)
+            arr.step(start, stop)
+        else:
+            partition(0, stop)
+            first_merges(start - 2, stop)
+            current = start - 4
+            step = 2
+            while current >= buffer:
+                merges(current, current + step, stop)
+                step *= 2
+                current -= step
+            merge_back(buffer - 1, start - 1, buffer + start - 1, stop - 1)
+            wrapper(buffer // 2, buffer, start)
+    length = len(arr)
+    wrapper(length // 4, length // 2, length)
+
+@Sort("New Partition Merge Sort")
+def NewPartitionMergeSort(arr):
+    def partition(stop):
+        average = 0
+        for i in range(stop):
+            average += arr.get(i)
+        left = 0
+        for right in range(stop):
+            arr.refresh(right)
+            arr.incr_comps()
+            if average > arr[right] * stop:
+                if left != right:
+                    arr.swap(left, right)
+                left += 1
+        return left
+    def pairwise(buffer, left, right):
+        comp = arr.compare(left, right)
+        if comp == 1:
+            arr.swap(buffer, right)
+            arr.swap(buffer + 1, left)
+        else:
+            arr.swap(buffer, left)
+            arr.swap(buffer + 1, right)
+    def pairwise_swaps(buffer):
+        while buffer + 3 < len(arr):
+            pairwise(buffer, buffer + 2, buffer + 3)
+            buffer += 2
+        if buffer < len(arr) - 2:
+            arr.swap(buffer, buffer + 2)
+    print(partition(len(arr)))
+    pairwise_swaps(len(arr) // 2 - 2)
+
+@Sort("Bitonic Sort")
+def BitonicSort(arr):
+    direction = True
+    maximum = 1
+    length = len(arr)
+    while maximum < length:
+        max_times_2 = maximum * 2
+        change = maximum < length // 2
+        gap = maximum
+        while gap:
+            for start in range(0, length, gap * 2):
+                if start % max_times_2 == 0 and change:
+                    direction = not direction
+                for current in range(start, start + gap):
+                    if direction:
+                        arr.step(current, current + gap)
+                    else:
+                        arr.step(current + gap, current)
+            gap //= 2
+        maximum *= 2
+
+@Sort("Odd Even Merge Sort")
+def OddEvenMergeSort(arr):
+    n = len(arr)
+    p = 1
+    while p < n:
+        k = p
+        while k:
+            for j in range(k % p, n - k, 2 * k):
+                for i in range(k):
+                    if int((i + j) / (p * 2)) == int((i + j + k) / (p * 2)):
+                        arr.step(i + j, i + j + k)
+            k //= 2
+        p *= 2
+
+@Sort("Recursive Pop Sort")
+def RecursivePopSort(arr):
+    def wrapper(start, stop, direction):
+        if stop - start >= 2:
+            wrapper(start, (stop - start) // 2 + start, not direction)
+            wrapper((stop - start) // 2 + start, stop, direction)
+            right = stop - 1
+            while True:
+                if direction:
+                    while right > start and arr.compare(start, right) == -1:
+                        right -= 1
+                else:
+                    while right > start and arr.compare(start, right) == 1:
+                        right -= 1
+                if right == start:
+                    break
+                for i in range(start, right):
+                    arr.swap(i, i + 1)
+                right -= 1
+    wrapper(0, len(arr), True)
+
+@Sort("MSD Radix Sort")
+def MSDRadixSort(arr, base=2):
+    def to_base(n, b):
+        if n == 0:
+            return [0]
+        digits = []
+        while n:
+            digits.append(int(n % b))
+            n //= b
+        return digits[::-1]
+    def wrapper(start, stop, digit):
+        if stop - start >= 2 and digit < length:
+            lst = [[] for i in range(base)]
+            for i in range(start, stop):
+                num = arr.get(i) - incr
+                new = to_base(num, base)
+                while len(new) < length:
+                    new.insert(0, 0)
+                lst[new[digit]].append(num)
+            extended = []
+            for i in lst:
+                extended.extend(i)
+            index = start
+            for i in extended:
+                arr.write(index, i + incr)
+                index += 1
+            pos = start
+            for i in lst:
+                wrapper(pos, pos + len(i), digit + 1)
+                pos += len(i)
+    incr = min(arr)
+    length = len(to_base(max(arr) - incr, base))
+    wrapper(0, len(arr), 0)
+
+@Sort("No-Heap Max Heap Sort")
+def NoHeapMaxHeapSort(arr):
+    def sift_down(node, start, stop):
+        left = (node - start) * 2 + 1 + start
+        if left < stop:
+            right = left + 1
+            if right < stop:
+                child = right if arr.compare(left, right) == -1 else left
+            else:
+                child = left
+            if arr.compare(node, child) == -1:
+                arr.swap(node, child)
+                sift_down(child, start, stop)
+    def pseudo_sort(start):
+        for i in range(len(arr) - 1, start, -1):
+            arr.swap(start, i)
+            sift_down(start, start, i)
+    for i in range(len(arr) - 1):
+        pseudo_sort(i)
+    if len(arr) >= 2:
+        if arr.compare(1, 2) == 1:
+            arr.swap(1, 2)
+        else:
+            arr.step(0, 1)
+
+@Sort("Selection Pancake Sort")
+def SelectionPancakeSort(arr):
+    for i in range(len(arr) - 1):
+        smallest = arr.get_min(i)
+        if smallest != i:
+            arr.reverse(i, smallest + 1)
+
+@Sort("Recursive Shell Sort")
+def RecursiveShellSort(arr):
+    def insertion(start, stop, gap):
+        for i in range(start, stop - gap, gap):
+            while i >= start and arr.compare(i, i + gap) == 1:
+                arr.swap(i, i + gap)
+                i -= gap
+    def wrapper(start, gap):
+        if gap + start <= len(arr):
+            wrapper(start, gap * 2)
+            wrapper(start + gap, gap * 2)
+            insertion(start - 1, len(arr), gap)
+    wrapper(1, 1)
+
+@Sort("Iterative Pairwise Sort")
+def IterativePairwiseSort(arr):
+    n = len(arr)
+    a = 1
+    while a < n:
+        b = a
+        c = 0
+        while b < n:
+            arr.step(b - a, b)
+            b += 1
+            c = (c + 1) % a
+            if not c:
+                b += a
+        a *= 2
+    a //= 4
+    e = 1
+    while a:
+        d = e
+        while d:
+            b = (d + 1) * a
+            c = 0
+            while b < n:
+                arr.step(b - d * a, b)
+                c = (c + 1) % a
+                b += 1
+                if not c:
+                    b += a
+            d //= 2
+        a //= 2
+        e = e * 2 + 1
+
+@Sort("Pancake Sort")
+def PancakeSort(arr):
+    for i in range(len(arr) - 1, 0, -1):
+        index = arr.get_max(0, i + 1)
+        if index != i:
+            if index != 0:
+                arr.reverse(0, index + 1)
+            arr.reverse(0, i + 1)
 
 # ------------------------------------------------------------------------------
 
