@@ -758,7 +758,7 @@ def StoogeSort(arr):
             wrapper(start, ceil(stop - ((stop - start + 1) / 3)))
     wrapper(0, len(arr) - 1)
 
-@Sort("Hyper Stooge Sort", "Comparison", 16, "n^3", "n^3", "n^3", 1, 1, 1)
+@Sort("Hyper Stooge Sort", "Comparison", 16, "3^n", "3^n", "3^n", 1, 1, 1)
 def HyperStoogeSort(arr):
     def wrapper(start, stop):
         if arr.compare(start, stop) == 1:
