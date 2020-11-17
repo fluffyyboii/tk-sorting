@@ -9,13 +9,14 @@ TO_DO = """TO-DO LIST:
 * Add a way to specify sort parameters (ex. base)
 * Implement an aux-(array/structure) system   [done?]
 * Implement a color system
-* Optimize canvas refreshes"""
+* Finish/fix sorts"""
 
 print(TO_DO)
 
 BG = "#eee"
 ICON = "Put icon data here, or a file name."
 ICON_FROMFILE = False
+HIDE_PYGAME = True
 LOAD_ICON = False
 MIN_FREQ = 19
 MAX_FREQ = 590
@@ -48,6 +49,7 @@ class CancelSort(KeyboardInterrupt):
     "The sort was cancelled by the user."
 
 class Array(list):
+    "The class used to visualize arrays."
     def __init__(self, lst):
         super().__init__(lst)
         self.length = super().__len__()
@@ -61,9 +63,10 @@ class Array(list):
         self.max_item = max(self)
         self.aux_writes = 0
         self.draw_stats = [{"value": None, "color": None, "id": None}
-                           for i in range(len(self))]
+                           for i in range(len(self))] + [self.max_item]
         self.first = True
     def stat_check(func):
+        "Returns a decorator that raises CancelSort if 'running' is False."
         def decorator(*args, **kwargs):
             try:
                 global running
@@ -73,7 +76,24 @@ class Array(list):
             except:
                 args[0].clear_sounds()
                 raise
+        decorator.__doc__ = func.__doc__
         return decorator
+    def bad_type(msg):
+        "Returns a decorator that raises TypeError."
+        def decorator(*args, **kwargs):
+            "Bad type."
+            raise TypeError(msg)
+        return decorator
+    __delitem__ = bad_type("cannot delete item from Array")
+    __iadd__ = bad_type("cannot add to Array")
+    __imul__ = bad_type("cannot multiply Array")
+    append = bad_type("cannot append to Array")
+    pop = bad_type("cannot pop from Array")
+    clear = bad_type("cannot clear Array")
+    extend = bad_type("cannot extend Array")
+    insert = bad_type("cannot insert to Array")
+    remove = bad_type("cannot remove from Array")
+    sort = bad_type("No.")
     @stat_check
     def __len__(self):
         return self.length
@@ -83,14 +103,9 @@ class Array(list):
     @stat_check
     def __setitem__(self, index, value):
         super().__setitem__(index, value)
-    @stat_check
-    def __delitem__(self, index):
-        raise TypeError("cannot delete item of Array")
-    @stat_check
-    def __len__(self):
-        return super().__len__()
     # No stat check for sounds
     def clear_sounds(self):
+        "Stop all sounds playing."
         for i in self.sounds:
             i.stop()
         self.sounds.clear()
@@ -98,49 +113,50 @@ class Array(list):
     def refresh(self, *colored, analyze=False, done=False):
         "Refresh the canvas."
         self.clear_sounds()
+        if self.first:
+            canvas.delete("all")
+            self.first = False
         if self.passed >= self.frames:
             self.passed = -1
-            if self.first:
-                canvas.delete("all")
-                self.first = False
+            max_change = self.max_item != self.draw_stats[len(self)]
+            if max_change:
+                self.draw_stats[len(self)] = self.max_item
             for i in range(len(self)):
                 stats = self.draw_stats[i]
                 if done and i <= colored[0]:
-                    color = "#0e0"
+                    color = "#0e0"   # green
                 elif i in colored:
                     if sound_var.get():
                         sound = Sound(square(sin(2 * pi * arange(44100) * (self[
                             i] / self.max_item * ((MAX_FREQ * 4) - (MIN_FREQ * 4
                             )) + (MIN_FREQ * 4)) / 44100)).astype(float32))
                         sound.set_volume(VOLUME)
+                        sound.play()
                         self.sounds.append(sound)
-                        self.sounds[-1].play(-1)
                     if color_var.get():
                         color = "black"
                     else:
                         color = "blue" if analyze else "red"
                 else:
                     if color_var.get():
-                        pass
+                        raise CancelSort("color hasn't been implemented yet")
                     else:
                         color = "black"
-                if stats["color"] != color:
-                    rect_id = stats["id"]
-                    if stats["value"] == self[i]:
-                        canvas.itemconfig(rect_id, outline=color, fill=color)
-                        self.draw_stats[i]["color"] = color
-                    else:
-                        canvas.delete(rect_id)
-                        self.draw_stats[i] = {"color": color, "value": self[i],
-                            "id": canvas.create_rectangle(i * (800 / len(self)),
-                            -((600 * (self[i] / self.max_item)) - 600), (i + 1)
-                            * (800 / len(self)), 600, outline=color, fill=color)
-                        }
+                rect_id = stats["id"]
+                if stats["value"] != self[i]:
+                    canvas.delete(rect_id)
+                    self.draw_stats[i] = {"color": color, "value": self[i],
+                        "id": canvas.create_rectangle(i * (800 / len(self)),
+                        -((600 * (self[i] / self.max_item)) - 600), (i + 1)
+                        * (800 / len(self)), 600, outline=color, fill=color)}
+                elif stats["color"] != color:
+                    canvas.itemconfig(rect_id, outline=color, fill=color)
+                    self.draw_stats[i]["color"] = color
             canvas.update()
         self.passed += 1
     @stat_check
     def compare(self, i1, i2, refresh=True):
-        "Returns the index that has the higher value in the array."
+        "Returns 1 if i1 > i2, -1 if i1 < i2, and 0 if i1 == i2."
         self.comps += 1
         comps.config(text="Comparisons: %s" % self.comps)
         if refresh:
@@ -213,6 +229,7 @@ class Array(list):
             stop -= 1
     @stat_check
     def compare_values(self, i, v, refresh=True):
+        "Compares values i and v."
         self.comps += 1
         comps.config(text="Comparisons: %s" % self.comps)
         if refresh:
@@ -220,37 +237,39 @@ class Array(list):
         return 1 if i > v else -1 if i < v else 0
     @stat_check
     def get(self, i):
+        "Return self[i]."
         self.refresh(i, analyze=True)
         return self[i]
     @stat_check
     def write_aux(self, aux, index, val):
+        "Write to an aux array."
         self.aux_writes += 1
         aux_writes.config(text="Aux writes: %s" % self.aux_writes)
         aux[index] = val
     @stat_check
     def swap_aux(self, aux, i1, i2):
+        "Swap to an aux array."
         self.aux_writes += 2
         aux_writes.config(text="Aux writes: %s" % self.aux_writes)
         aux[i1], aux[i2] = aux[i2], aux[i1]
     @stat_check
     def append_aux(self, aux, val):
+        "Append to an aux array."
         self.aux_writes += 1
         aux_writes.config(text="Aux writes: %s" % self.aux_writes)
         aux.append(val)
     @stat_check
     def step(self, lo, hi):
+        "Compare (and swap if nexessary) indexes lo and hi."
         if self.compare(lo, hi) == 1:
             self.swap(lo, hi)
     @stat_check
     def incr_comps(self):
+        "Increment the comparisons."
         self.comps += 1
         comps.config(text="Comparisons: %s" % self.comps)
-    @stat_check
-    def append(self, val):
-        raise TypeError("cannot append to Array")
-    @stat_check
-    def pop(self, index=-1):
-        raise TypeError("cannot pop from Array")
+Array.stat_check = staticmethod(Array.stat_check)
+Array.bad_type = staticmethod(Array.bad_type)
 
 sort_dict = {}
 def Sort(name=None, sort_type="<NULL>", limit=None, stable="<NULL>",
@@ -647,7 +666,7 @@ def BitReversed(arr):
         binary = bin(arr[i] - minimum)[2:]
         while len(binary) < length:
             binary = "0" + binary
-        arr.write(i, eval("0b" + binary[::-1]) + minimum)
+        arr.write(i, eval("0b" + binary[::-1]) + minimum, update_max=True)
 
 def MinHeapified(arr, reverse=False):
     if reverse:
@@ -691,6 +710,11 @@ def Factors(arr):
             if not i % j:
                 factors += 1
         arr.write(i - 1, factors, update_max=True)
+
+@Shuffle("Almost Sorted")
+def AlmostSorted(arr):
+    for i in range(ceil(sqrt(len(arr)))):
+        arr.swap(randrange(len(arr)), randrange(len(arr)))
 
 @Sort("Bubble Sort", "Comparison", 2048, True, "n^2", "n^2", "n^2", 1, 1, 1)
 def BubbleSort(arr):
@@ -1616,6 +1640,26 @@ def PancakeSort(arr):
                 arr.reverse(0, index + 1)
             arr.reverse(0, i + 1)
 
+@Sort("Base N Max Heap Sort")
+def BaseNMaxHeapSort(arr, base=3):
+    def sift_down(node, stop):
+        left = node * base + 1
+        if left < stop:
+            max_index = left
+            for i in range(left + 1, left + base):
+                if i >= stop:
+                    break
+                if arr.compare(max_index, i) == -1:
+                    max_index = i
+            if arr.compare(node, max_index) == -1:
+                arr.swap(node, max_index)
+                sift_down(max_index, stop)
+    for i in range(len(arr) - 1, -1, -1):
+        sift_down(i, len(arr))
+    for i in range(len(arr) - 1, 0, -1):
+        arr.swap(0, i)
+        sift_down(0, i)
+
 # ------------------------------------------------------------------------------
 
 def ON_START_UP():
@@ -1633,7 +1677,8 @@ except:
 
 root.update()
 
-os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+if HIDE_PYGAME:
+    os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 try:
     from numpy import sin, pi, arange, float32
     from pygame.mixer import init, Sound
