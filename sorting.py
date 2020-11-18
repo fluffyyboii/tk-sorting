@@ -143,7 +143,7 @@ class Array(list):
                     else:
                         color = "black"
                 rect_id = stats["id"]
-                if stats["value"] != self[i]:
+                if stats["value"] != self[i] or max_change:
                     canvas.delete(rect_id)
                     self.draw_stats[i] = {"color": color, "value": self[i],
                         "id": canvas.create_rectangle(i * (800 / len(self)),
