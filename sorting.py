@@ -12,7 +12,6 @@ TO_DO = """TO-DO LIST:
 * Finish/fix sorts"""
 
 print(TO_DO)
-
 BG = "#eee"
 ICON = "Put icon data here, or a file name."
 ICON_FROMFILE = False
@@ -21,6 +20,7 @@ LOAD_ICON = False
 MIN_FREQ = 19
 MAX_FREQ = 590
 VOLUME = 0.15
+S = SATURATION = 215
 
 import tkinter as tk
 
@@ -59,12 +59,14 @@ class Array(list):
         self.reversals = 0
         self.frames = 0
         self.passed = 0
+        self.offset = 0
         self.sounds = []
         self.max_item = max(self)
         self.aux_writes = 0
         self.draw_stats = [{"value": None, "color": None, "id": None}
                            for i in range(len(self))] + [self.max_item]
         self.first = True
+        self.color = None
     def stat_check(func):
         "Returns a decorator that raises CancelSort if 'running' is False."
         def decorator(*args, **kwargs):
@@ -84,6 +86,8 @@ class Array(list):
             "Bad type."
             raise TypeError(msg)
         return decorator
+    def ttc(tup):
+        return "#" + "".join(hex(round(i))[2:].zfill(2) for i in tup)
     __delitem__ = bad_type("cannot delete item from Array")
     __iadd__ = bad_type("cannot add to Array")
     __imul__ = bad_type("cannot multiply Array")
@@ -99,9 +103,13 @@ class Array(list):
         return self.length
     @stat_check
     def __getitem__(self, index):
+        if type(index) == int:
+            index -= self.offset
         return super().__getitem__(index)
     @stat_check
     def __setitem__(self, index, value):
+        if type(index) == int:
+            index -= self.offset
         super().__setitem__(index, value)
     # No stat check for sounds
     def clear_sounds(self):
@@ -112,11 +120,18 @@ class Array(list):
     @stat_check
     def refresh(self, *colored, analyze=False, done=False):
         "Refresh the canvas."
-        self.clear_sounds()
+        use_color = color_var.get()
+        if use_color != self.color:
+            if use_color:
+                canvas.config(bg="black")
+            else:
+                canvas.config(bg=BG)
+            self.color = use_color
         if self.first:
             canvas.delete("all")
             self.first = False
         if self.passed >= self.frames:
+            self.clear_sounds()
             self.passed = -1
             max_change = self.max_item != self.draw_stats[len(self)]
             if max_change:
@@ -133,13 +148,27 @@ class Array(list):
                         sound.set_volume(VOLUME)
                         sound.play()
                         self.sounds.append(sound)
-                    if color_var.get():
-                        color = "black"
+                    if use_color:
+                        color = "white"
                     else:
                         color = "blue" if analyze else "red"
                 else:
-                    if color_var.get():
-                        raise CancelSort("color hasn't been implemented yet")
+                    if use_color:
+                        h = (self[i] - 1) / self.max_item * 360
+                        x = int((1 - abs(h / 60 % 2 - 1)) * S)
+                        if 0 <= h < 60:
+                            rgb = (S, x, 0)
+                        elif 60 <= h < 120:
+                            rgb = (x, S, 0)
+                        elif 120 <= h < 180:
+                            rgb = (0, S, x)
+                        elif 180 <= h < 240:
+                            rgb = (0, x, S)
+                        elif 240 <= h < 300:
+                            rgb = (x, 0, S)
+                        else:
+                            rgb = (S, 0, x)
+                        color = self.ttc(rgb)
                     else:
                         color = "black"
                 rect_id = stats["id"]
@@ -270,6 +299,7 @@ class Array(list):
         comps.config(text="Comparisons: %s" % self.comps)
 Array.stat_check = staticmethod(Array.stat_check)
 Array.bad_type = staticmethod(Array.bad_type)
+Array.ttc = staticmethod(Array.ttc)
 
 sort_dict = {}
 def Sort(name=None, sort_type="<NULL>", limit=None, stable="<NULL>",
@@ -508,7 +538,6 @@ stop.pack()
 
 color_var = tk.BooleanVar(root)
 use_color = tk.Checkbutton(root, text="Use Color", variable=color_var, bg=BG)
-use_color.config(state="disabled")
 use_color.pack()
 
 sound_var = tk.BooleanVar(root)
@@ -599,18 +628,19 @@ def ReversedPrimes(arr):
 
 @Shuffle("Fly Straight Dangit")
 def FlyStraightDangit(arr):
+    def gcd(a, b):
+        while b:
+            a, b = b, a % b
+        return a
     def sequence(n):
-        def gcd(a, b):
-            for i in range(min(a, b), 1, -1):
-                if not (a % i or b % i):
-                    return i
         if n in [0, 1]:
             return 1
         n_minus1 = sequence(n - 1)
         n_gcd = gcd(n_minus1, n)
-        if n_gcd:
-            return int(n_minus1 / n_gcd)
-        return n_minus1 + n + 1
+        if n_gcd == 1:
+            return n_minus1 + n + 1
+        else:
+            return n_minus1 // n_gcd
     lst = []
     for i in range(len(arr)):
         new = sequence(arr[i])
@@ -716,6 +746,49 @@ def AlmostSorted(arr):
     for i in range(ceil(sqrt(len(arr)))):
         arr.swap(randrange(len(arr)), randrange(len(arr)))
 
+@Shuffle("Triangular Heapified")
+def TriangularHeapified(arr):
+    def triangular(n):
+        times = 1
+        current = 0
+        while current < n:
+            current += times
+            times += 1
+        return times
+    def sift_down(node, offset, stop):
+        if offset is None:
+            offset = triangular(node)
+        left = node + offset
+        if left < stop:
+            right = left + 1
+            if right < stop:
+                if arr.compare(left, right) == -1:
+                    index = right
+                else:
+                    index = left
+            else:
+                index = left
+            if arr.compare(node, index) == -1:
+                arr.swap(node, index)
+                sift_down(index, offset + 1, stop)
+    for i in range(len(arr) - 1, -1, -1):
+        sift_down(i, None, len(arr))
+
+@Shuffle("Sum of Factors")
+def SumOfFactors(arr):
+    def factors(n):
+        yield 1
+        for i in range(2, n // 2 + 1):
+            if not n % i:
+                yield i
+    for i in range(len(arr)):
+        arr.write(i, sum(factors(arr[i])), update_max=True)
+
+@Shuffle("Reversed Bit Reversed")
+def ReversedBitReversed(arr):
+    BitReversed(arr)
+    arr.reverse()
+
 @Sort("Bubble Sort", "Comparison", 2048, True, "n^2", "n^2", "n^2", 1, 1, 1)
 def BubbleSort(arr):
     for i in range(len(arr) - 1):
@@ -762,13 +835,18 @@ def TimeInsertionSort(arr, mult=0.00035):
 
 @Sort("Comb Sort")
 def CombSort(arr):
-    for i in range(len(arr) - 1, 0, -1):
-        j = 0
-        while i < len(arr):
-            if arr.compare(j, i) == 1:
-                arr.swap(i, j)
-            j += 1
-            i += 1
+    gap = len(arr) * 10 // 13
+    while gap:
+        for i in range(len(arr) - gap):
+            arr.step(i, i + gap)
+        gap = gap * 10 // 13
+    swap = True
+    while swap:
+        swap = False
+        for i in range(len(arr) - 1):
+            if arr.compare(i, i + 1) == 1:
+                swap = True
+                arr.swap(i, i + 1)
 
 @Sort("Stooge Sort", "Comparison", 32, "n^(log3/log1.5)", "n^(log3/log1.5)",
       "n^(log3/log1.5)", 1, 1, 1)
@@ -1035,7 +1113,7 @@ def BufferedStoogeSort(arr):
                 two_third = ceil((stop - start) / 3 * 2) + start
                 if two_third - third < third:
                     two_third -= 1
-                if not (stop - start - 2) % 3:
+                if not (stop - start - 2) % 3:   # how do I check this lol
                     two_third -= 1
                 wrapper(third, two_third)
                 wrapper(two_third, stop)
@@ -1659,6 +1737,235 @@ def BaseNMaxHeapSort(arr, base=3):
     for i in range(len(arr) - 1, 0, -1):
         arr.swap(0, i)
         sift_down(0, i)
+
+@Sort("Triangular Heap Sort")
+def TriangularHeapSort(arr):
+    TriangularHeapified(arr)
+    def sift_down(node, offset, stop):
+        left = node + offset
+        if left < stop:
+            right = left + 1
+            if right < stop:
+                if arr.compare(left, right) == -1:
+                    index = right
+                else:
+                    index = left
+            else:
+                index = left
+            if arr.compare(node, index) == -1:
+                arr.swap(node, index)
+                sift_down(index, offset + 1, stop)
+    for i in range(len(arr) - 1, 0, -1):
+        arr.swap(0, i)
+        sift_down(0, 1, i)
+
+@Sort("Iterative Circle Sort")
+def IterativeCircleSort(arr):
+    swap = True
+    while swap:
+        swap = False
+        length = len(arr)
+        while length:
+            for start in range(0, len(arr), length):
+                left = start
+                right = start + length - 1
+                while left < right:
+                    if arr.compare(left, right) == 1:
+                        arr.swap(left, right)
+                        swap = True
+                    left += 1
+                    right -= 1
+            length //= 2
+
+@Sort("Inverted Circle Sort")
+def InvertedCircleSort(arr):
+    def wrapper(start, stop):
+        if stop - start >= 2:
+            wrapper(start, (stop - start) // 2 + start)
+            wrapper((stop - start) // 2 + start, stop)
+            left, right = start, stop - 1
+            while left < right:
+                if arr.compare(left, right) == 1:
+                    nonlocal swap
+                    swap = True
+                    arr.swap(left, right)
+                left += 1
+                right -= 1
+    swap = True
+    while swap:
+        swap = False
+        wrapper(0, len(arr))
+
+@Sort("Iterative Inverted Circle Sort")
+def IterativeInvertedCircleSort(arr):
+    swap = True
+    while swap:
+        swap = False
+        length = 2
+        while length <= len(arr):
+            for start in range(0, len(arr), length):
+                left, right = start, start + length - 1
+                while left < right:
+                    if arr.compare(left, right) == 1:
+                        swap = True
+                        arr.swap(left, right)
+                    left += 1
+                    right -= 1
+            length *= 2
+
+@Sort("Cool Circle Sort")
+def CoolCircleSort(arr):
+    def circle_backwards(start, stop):
+        if stop - start >= 2:
+            new = (stop - start) // 2 + start
+            circle_backwards(start, new)
+            circle_backwards(new, stop)
+            left, right = start, stop - 1
+            while left < right:
+                arr.step(left, right)
+                left += 1
+                right -= 1
+    def wrapper_backwards(start, stop):
+        if stop - start >= 2:
+            circle_backwards(start, stop)
+            new = (stop - start) // 2 + start
+            wrapper_backwards(start, new)
+            wrapper_backwards(new, stop)
+    def circle_forwards(start, stop):
+        if stop - start >= 2:
+            left, right = start, stop - 1
+            while left < right:
+                arr.step(left, right)
+                left += 1
+                right -= 1
+            new = (stop - start) // 2 + start
+            circle_forwards(start, new)
+            circle_forwards(new, stop)
+    def wrapper_forwards(start, stop):
+        if stop - start >= 2:
+            circle_forwards(start, stop)
+            new = (stop - start) // 2 + start
+            wrapper_forwards(start, new)
+            wrapper_forwards(new, stop)
+    wrapper_backwards(0, len(arr))
+    wrapper_forwards(0, len(arr))
+    InsertionSort(arr)
+
+@Sort("One Sided Bitonic Sort")
+def OneSidedBitonicSort(arr):
+    def merge(start, stop, first):
+        length = stop - start
+        if length >= 2:
+            gap = length // 2
+            middle = gap + start
+            if first:
+                left, right = start, stop - 1
+                while left < right:
+                    arr.step(left, right)
+                    left += 1
+                    right -= 1
+            else:
+                for i in range(start, middle):
+                    arr.step(i, i + gap)
+            merge(start, middle, False)
+            merge(middle, stop, False)
+    def wrapper(start, stop):
+        length = stop - start
+        if length >= 2:
+            middle = length // 2 + start
+            wrapper(start, middle)
+            wrapper(middle, stop)
+            merge(start, stop, True)
+    wrapper(0, len(arr))
+
+@Sort("In-Place LSD Radix Sort")
+def InPlaceLSDRadixSort(arr, base=4):
+    def to_base(n, b):
+        if n == 0:
+            return [0]
+        res = []
+        while n:
+            res.append(n % b)
+            n //= b
+        return res[::-1]
+    incr = min(arr)
+    length = len(to_base(max(arr) - incr, base))
+    for digit in range(length - 1, -1, -1):
+        bounds = [-1 for i in range(base)]
+        for i in range(len(arr)):
+            num = arr.get(i) - incr
+            conv = to_base(num, base)
+            while len(conv) < length:
+                conv.insert(0, 0)
+            pos = conv[digit]
+            for j in range(i - 1, bounds[pos], -1):
+                arr.swap(j, j + 1)
+            for j in range(pos, base):
+                bounds[j] += 1
+
+@Sort("While Sort")
+def WhileSort(arr):
+    while True:
+        arr.refresh()
+
+@Sort("Hope Sort")
+def HopeSort(arr):
+    pass
+
+@Sort("Reversal Sort")
+def ReversalSort(arr):
+    unfinished = True
+    while unfinished:
+        unfinished = False
+        i = 0
+        while i < len(arr) - 1:
+            new = i + 1
+            while new < len(arr) and arr.compare(new - 1, new) == 1:
+                new += 1
+            if new != i + 1:
+                unfinished = True
+                arr.reverse(i, new)
+            i = new
+
+@Sort("Tiny Gnome Sort")
+def TinyGnomeSort(arr):
+    i = 1
+    while i < len(arr):
+        if arr.compare(i - 1, i) == 1:
+            arr.swap(i - 1, i)
+            i = 1
+        else:
+            i += 1
+
+@Sort("Optimized Stooge Sort")
+def OptimizedStoogeSort(arr):
+    def circle(left, right):
+        while left < right:
+            arr.step(left, right)
+            left += 1
+            right -= 1
+    for i in range(len(arr) - 1, 0, -1):
+        circle(0, i)
+    for i in range(len(arr) - 1):
+        circle(i, len(arr) - 1)
+
+@Sort("Weave Sort")
+def WeaveSort(arr):
+    def circle(start, stop, gap):
+        if (stop - start) // gap >= 1:
+            left, right = start, stop
+            while left < right:
+                arr.step(left, right)
+                left += gap
+                right -= gap
+            circle(start, right, gap)
+            circle(left, stop, gap)
+    def wrapper(start, gap):
+        if gap < len(arr):
+            wrapper(start, gap * 2)
+            wrapper(start + gap, gap * 2)
+            circle(start, len(arr) - gap + start, gap)
+    wrapper(0, 1)
 
 # ------------------------------------------------------------------------------
 
