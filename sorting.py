@@ -8,13 +8,13 @@ TO_DO = """TO-DO LIST:
 * Add a button to set the recursion limit
 * Add a way to specify sort parameters (ex. base)
 * Implement an aux-(array/structure) system   [done?]
-* Implement a color system
 * Finish/fix sorts"""
 
 print(TO_DO)
+
 BG = "#eee"
 ICON = "Put icon data here, or a file name."
-ICON_FROMFILE = False
+ICON_FROMFILE = True
 HIDE_PYGAME = True
 LOAD_ICON = False
 MIN_FREQ = 19
@@ -120,18 +120,18 @@ class Array(list):
     @stat_check
     def refresh(self, *colored, analyze=False, done=False):
         "Refresh the canvas."
-        use_color = color_var.get()
-        if use_color != self.color:
-            if use_color:
-                canvas.config(bg="black")
-            else:
-                canvas.config(bg=BG)
-            self.color = use_color
         if self.first:
             canvas.delete("all")
             self.first = False
         if self.passed >= self.frames:
-            self.clear_sounds()
+            use_color = color_var.get()
+            if use_color != self.color:
+                if use_color:
+                    canvas.config(bg="black")
+                else:
+                    canvas.config(bg=BG)
+                self.color = use_color
+            new_sounds = []
             self.passed = -1
             max_change = self.max_item != self.draw_stats[len(self)]
             if max_change:
@@ -146,10 +146,9 @@ class Array(list):
                             i] / self.max_item * ((MAX_FREQ * 4) - (MIN_FREQ * 4
                             )) + (MIN_FREQ * 4)) / 44100)).astype(float32))
                         sound.set_volume(VOLUME)
-                        sound.play()
-                        self.sounds.append(sound)
+                        new_sounds.append(sound)
                     if use_color:
-                        color = "white"
+                        color = BG
                     else:
                         color = "blue" if analyze else "red"
                 else:
@@ -182,30 +181,29 @@ class Array(list):
                     canvas.itemconfig(rect_id, outline=color, fill=color)
                     self.draw_stats[i]["color"] = color
             canvas.update()
+            self.clear_sounds()
+            for i in new_sounds:
+                i.play()
+            self.sounds = new_sounds
         self.passed += 1
     @stat_check
-    def compare(self, i1, i2, refresh=True):
+    def compare(self, i1, i2, refresh=True, analyze=False):
         "Returns 1 if i1 > i2, -1 if i1 < i2, and 0 if i1 == i2."
-        self.comps += 1
-        comps.config(text="Comparisons: %s" % self.comps)
+        self.incr_comps()
         if refresh:
-            self.refresh(i1, i2)
+            self.refresh(i1, i2, analyze=analyze)
         return 1 if self[i1] > self[i2] else -1 if self[i1] < self[i2] else 0
     @stat_check
     def swap(self, i1, i2, refresh=True):
         "Swaps the two indexes."
-        self.writes += 2
-        self.swaps += 1
-        writes.config(text="Writes: %s" % self.writes)
-        swaps.config(text="Swaps: %s" % self.swaps)
+        self.incr_swaps()
         self[i1], self[i2] = self[i2], self[i1]
         if refresh:
             self.refresh(i1, i2)
     @stat_check
     def write(self, i, n, update_max=False, refresh=True):
         "Writes value n to index i."
-        self.writes += 1
-        writes.config(text="Writes: %s" % self.writes)
+        self.incr_writes()
         self[i] = n
         if update_max:
             self.max_item = max(self)
@@ -217,14 +215,9 @@ class Array(list):
         if stop is None:
             stop = len(self)
         new = start
-        start += 1
-        while start < stop:
-            self.comps += 1
-            comps.config(text="Comparisons: %s" % self.comps)
-            self.refresh(new, start, analyze=True)
-            if self[start] > self[new]:
-                new = start
-            start += 1
+        for i in range(start + 1, stop):
+            if arr.compare(new, i, analyze=True) == -1:
+                new = i
         return new
     @stat_check
     def get_min(self, start=0, stop=None):
@@ -232,14 +225,9 @@ class Array(list):
         if stop is None:
             stop = len(self)
         new = start
-        start += 1
-        while start < stop:
-            self.comps += 1
-            comps.config(text="Comparisons: %s" % self.comps)
-            self.refresh(new, start, analyze=True)
-            if self[start] < self[new]:
-                new = start
-            start += 1
+        for i in range(start + 1, stop):
+            if arr.compare(new, i, analyze=True) == 1:
+                new = i
         return new
     @stat_check
     def reverse(self, start=None, stop=None):
@@ -250,8 +238,7 @@ class Array(list):
             else:
                 start, stop = 0, start
         stop -= 1
-        self.reversals += 1
-        reversals.config(text="Reversals: %s" % self.reversals)
+        self.incr_reversals()
         for i in range((stop - start + 1) // 2):
             self.swap(start, stop)
             start += 1
@@ -259,8 +246,7 @@ class Array(list):
     @stat_check
     def compare_values(self, i, v, refresh=True):
         "Compares values i and v."
-        self.comps += 1
-        comps.config(text="Comparisons: %s" % self.comps)
+        self.incr_comps()
         if refresh:
             self.refresh(i)
         return 1 if i > v else -1 if i < v else 0
@@ -272,20 +258,17 @@ class Array(list):
     @stat_check
     def write_aux(self, aux, index, val):
         "Write to an aux array."
-        self.aux_writes += 1
-        aux_writes.config(text="Aux writes: %s" % self.aux_writes)
+        self.incr_aux_writes()
         aux[index] = val
     @stat_check
     def swap_aux(self, aux, i1, i2):
         "Swap to an aux array."
-        self.aux_writes += 2
-        aux_writes.config(text="Aux writes: %s" % self.aux_writes)
+        self.incr_aux_writes(2)
         aux[i1], aux[i2] = aux[i2], aux[i1]
     @stat_check
     def append_aux(self, aux, val):
         "Append to an aux array."
-        self.aux_writes += 1
-        aux_writes.config(text="Aux writes: %s" % self.aux_writes)
+        self.incr_aux_writes()
         aux.append(val)
     @stat_check
     def step(self, lo, hi):
@@ -293,10 +276,31 @@ class Array(list):
         if self.compare(lo, hi) == 1:
             self.swap(lo, hi)
     @stat_check
-    def incr_comps(self):
+    def incr_comps(self, incr=1):
         "Increment the comparisons."
-        self.comps += 1
+        self.comps += incr
         comps.config(text="Comparisons: %s" % self.comps)
+    @stat_check
+    def incr_writes(self, incr=1):
+        "Increment the writes."
+        self.writes += incr
+        writes.config(text="Writes: %s" % self.writes)
+    @stat_check
+    def incr_swaps(self, incr=1):
+        "Increment the swaps."
+        self.swaps += incr
+        swaps.config(text="Swaps: %s" % self.swaps)
+        self.incr_writes(incr * 2)
+    @stat_check
+    def incr_reversals(self, incr=1):
+        "Increment the reversals."
+        self.reversals += incr
+        reversals.config(text="Reversals: %s" % self.reversals)
+    @stat_check
+    def incr_aux_writes(self, incr=1):
+        "Increment the aux writes."
+        self.aux_writes += incr
+        aux_writes.config(text="Aux writes: %s" % self.aux_writes)
 Array.stat_check = staticmethod(Array.stat_check)
 Array.bad_type = staticmethod(Array.bad_type)
 Array.ttc = staticmethod(Array.ttc)
@@ -313,7 +317,7 @@ def Sort(name=None, sort_type="<NULL>", limit=None, stable="<NULL>",
                      worst_space, unfinished, *options):
             self.name = name
             self.sort_type = sort_type
-            if type(limit) != int and limit is not None:
+            if type(limit) is not int and limit is not None:
                 raise TypeError("limit must be int or None")
             self.limit = limit
             self.stable = stable
@@ -406,7 +410,7 @@ def reset_stats(arr=None):
         arr.aux_writes = 0
 
 def run_sort():
-    global sort_dict, shuffle_dict, running
+    global sort_dict, shuffle_dict, running, arr
     if not textbox.get():
         showerror("Invalid Length", "The length cannot be empty!")
         return
@@ -789,6 +793,17 @@ def ReversedBitReversed(arr):
     BitReversed(arr)
     arr.reverse()
 
+@Shuffle("Final Merge")
+def FinalMerge(arr):
+    offset = ceil(len(arr) / 2)
+    for i in range(offset, len(arr)):
+        arr.write(i, arr[i - offset], update_max=True)
+
+@Shuffle("Random Values")
+def RandomValues(arr):
+    for i in range(len(arr)):
+        arr.write(i, randrange(1, len(arr) + 1))
+
 @Sort("Bubble Sort", "Comparison", 2048, True, "n^2", "n^2", "n^2", 1, 1, 1)
 def BubbleSort(arr):
     for i in range(len(arr) - 1):
@@ -898,6 +913,17 @@ def CocktailShakerSort(arr):
             if arr.compare(j, j + 1) == 1:
                 arr.swap(j, j + 1)
 
+@Sort("Optimized Shaker Sort")
+def OptimizedShakerSort(arr):
+    start, stop = 0, len(arr) - 1
+    while start < stop:
+        for i in range(start, stop):
+            arr.step(i, i + 1)
+        stop -= 1
+        for i in range(stop, start, -1):
+            arr.step(i - 1, i)
+        start += 1
+
 @Sort("Snuffle Sort", "Comparison", 16, "e^n", "e^n", "e^n", 1, 1, 1)
 def SnuffleSort(arr):
     def wrapper(start, stop):
@@ -913,21 +939,21 @@ def SnuffleSort(arr):
 @Sort("Circle Sort", "Comparison", 2048)
 def CircleSort(arr):
     def wrapper(start, stop):
-        if stop - start >= 2:
-            i, j = start, stop - 1
-            while i < j:
-                if arr.compare(i, j) == 1:
+        if stop - start + 1 >= 2:
+            left, right = start, stop
+            while left < right:
+                if arr.compare(left, right) == 1:
                     nonlocal swapped
                     swapped = True
-                    arr.swap(i, j)
-                i += 1
-                j -= 1
-            wrapper(start, (stop - start) // 2 + start)
-            wrapper((stop - start) // 2 + start, stop)
+                    arr.swap(left, right)
+                left += 1
+                right -= 1
+            wrapper(start, right)
+            wrapper(left, stop)
     swapped = True
     while swapped:
         swapped = False
-        wrapper(0, len(arr))
+        wrapper(0, len(arr) - 1)
 
 @Sort("Bozo Sort", "Comparison", 6)
 def BozoSort(arr):
@@ -1966,6 +1992,116 @@ def WeaveSort(arr):
             wrapper(start + gap, gap * 2)
             circle(start, len(arr) - gap + start, gap)
     wrapper(0, 1)
+
+@Sort("Weave Merge Sort")
+def WeaveMergeSort(arr):
+    def wrapper(start, stop):
+        if stop - start >= 2:
+            middle = (stop - start) // 2 + start
+            wrapper(start, middle)
+            wrapper(middle, stop)
+            left, right = start + 1, middle
+            while right < stop:
+                for i in range(right, left, -1):
+                    arr.swap(i - 1, i)
+                left += 2
+                right += 1
+            for i in range(start, stop - 1):
+                while i >= start and arr.compare(i, i + 1) == 1:
+                    arr.swap(i, i + 1)
+                    i -= 1
+    wrapper(0, len(arr))
+
+@Sort("Knock-Off Cycle Sort")
+def KnockOffCycleSort(arr):
+    for i in range(len(arr) - 1):
+        while True:
+            new = i
+            for j in range(i + 1, len(arr)):
+                if arr.compare(i, j) == 1:
+                    new += 1
+            if new == i:
+                break
+            while arr.compare(i, new) == 0:
+                new += 1
+            arr.swap(new, i)
+
+@Sort("Natural Merge Sort")
+def NaturalMergeSort(arr):
+    def merge(left, right, stop):
+        merged = []
+        first = True
+        start = 0
+        orig_right, orig_left = right, left
+        while left < orig_right and right < stop:
+            if arr.compare(left, right) == 1:
+                first = False
+                arr.append_aux(merged, arr[right])
+                right += 1
+            else:
+                if first:
+                    start += 1
+                else:
+                    arr.append_aux(merged, arr[left])
+                left += 1
+        while left < orig_right:
+            arr.append_aux(merged, arr[left])
+            left += 1
+        for i in range(start, len(merged) + start):
+            arr.write(i + orig_left, merged[i - start])
+    done = False
+    start = 0
+    stop = len(arr) - 1
+    while not done:
+        prev = 0
+        left = -1
+        done = True
+        for i in range(start, stop):
+            if arr.compare(i, i + 1) == 1:
+                if left == -1:
+                    left, prev = prev, i + 1
+                else:
+                    merge(left, prev, i + 1)
+                    if done:
+                        start = i
+                        done = False
+                    prev = i + 1
+                    left = -1
+        if left != -1:
+            merge(left, prev, len(arr))
+            done = False
+            stop = left
+
+@Sort("Selection Network")
+def SelectionNetwork(arr):
+    for i in range(len(arr) - 1):
+        j = 1
+        while j < len(arr) - i:
+            for k in range(i, len(arr) - j, j * 2):
+                arr.step(k, k + j)
+            j *= 2
+
+@Sort("Pairwise Circle Sort")
+def PairwiseCircleSort(arr):
+    def wrapper(start, stop):
+        if stop - start >= 2:
+            length = stop - start
+            i = 1
+            while i < length:
+                for j in range(start, stop, i * 2):
+                    for k in range(j, j + i):
+                        arr.step(k, k + i)
+                i *= 2
+            left, right = start, stop - 1
+            while left < right:
+                arr.step(left, right)
+                left += 1
+                right -= 1
+            mid = length // 2 + start
+            wrapper(start, mid)
+            wrapper(mid, stop)
+    wrapper(0, len(arr))
+    InsertionSort(arr)
 
 # ------------------------------------------------------------------------------
 
