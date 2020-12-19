@@ -804,6 +804,43 @@ def RandomValues(arr):
     for i in range(len(arr)):
         arr.write(i, randrange(1, len(arr) + 1))
 
+@Shuffle("Quicksort Killer")
+def QuicksortKiller(arr):
+    temp = list(arr)
+    mid = len(arr) // 2
+    stair = 0
+    step = 2
+    left = 0
+    right = mid
+    for i in range(len(arr)):
+        if i % 2 == 0:
+            arr.write(left, temp[i])
+            left += step
+            if left >= mid:
+                stair += 1
+                left = (1 << stair) - 1
+                step *= 2
+        else:
+            arr.write(right, temp[i])
+            right += 1
+
+@Shuffle("Shuffled Triangular")
+def ShuffledTriangular(arr):
+    total = 1
+    for i in range(len(arr)):
+        arr.write(i, total, update_max=True)
+        total += i + 1
+    RandomUnique(arr)
+
+@Shuffle("Left Factorial")
+def LeftFactorial(arr):
+    total = prod = 1
+    for i in range(len(arr)):
+        arr.write(i, total, update_max=True)
+        total += prod
+        prod *= i + 2
+    arr.reverse()
+
 @Sort("Bubble Sort", "Comparison", 2048, True, "n^2", "n^2", "n^2", 1, 1, 1)
 def BubbleSort(arr):
     for i in range(len(arr) - 1):
@@ -2102,6 +2139,70 @@ def PairwiseCircleSort(arr):
             wrapper(mid, stop)
     wrapper(0, len(arr))
     InsertionSort(arr)
+
+@Sort("Stable Hyper Stooge Sort")
+def StableHyperStoogeSort(arr):
+    def wrapper(start, stop):
+        if stop - start == 1:
+            arr.step(start, stop)
+        elif stop - start > 1:
+            arr.step(start, stop)
+            wrapper(start, stop - 1)
+            wrapper(start + 1, stop)
+            wrapper(start, stop - 1)
+    wrapper(0, len(arr) - 1)
+
+@Sort("In-Place Strand Sort")
+def InPlaceStrandSort(arr):
+    index = 0
+    prev = -1
+    while index < len(arr):
+        for pos in range(index + 1, len(arr)):
+            if arr.compare(index, pos) != 1:
+                index += 1
+                if index != pos:
+                    arr.swap(index, pos)
+        if prev > -1:
+            left, right = prev, index
+            while right > left >= 0:
+                if arr.compare(left, right) == 1:
+                    for i in range(left, right):
+                        arr.swap(i, i + 1)
+                    left -= 1
+                right -= 1
+        prev = index
+        index += 1
+
+@Sort("2^n Stooge Sort")
+def N2StoogeSort(arr):
+    def wrapper(start, stop):
+        if stop - start + 1 >= 2:
+            arr.step(start, stop)
+            wrapper(start, stop - 1)
+            wrapper(start + 1, stop)
+    wrapper(0, len(arr) - 1)
+
+@Sort("MSD Radix Merge Sort")
+def MSDRadixMergeSort(arr):
+    def wrapper(start, stop, digit, recurse):
+        if stop - start >= 2 and digit >= 0:
+            mid = (stop - start) // 2 + start
+            wrapper(start, mid, digit, False)
+            wrapper(mid, stop, digit, False)
+            i = start
+            while i < mid and ((arr.get(i) - decr) >> digit) & 1 == 0:
+                i += 1
+            j = mid
+            while j < stop and ((arr.get(j) - decr) >> digit) & 1 == 0:
+                if i != j:
+                    arr.swap(i, j)
+                i += 1
+                j += 1
+            if recurse:
+                wrapper(start, i, digit - 1, True)
+                wrapper(i, stop, digit - 1, True)
+    decr = arr[arr.get_min()]
+    wrapper(0, len(arr), int(log(arr[arr.get_max()] - decr, 2)), True)
 
 # ------------------------------------------------------------------------------
 
