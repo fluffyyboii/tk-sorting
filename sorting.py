@@ -50,9 +50,10 @@ class CancelSort(KeyboardInterrupt):
 
 class Array(list):
     "The class used to visualize arrays."
-    def __init__(self, lst):
+    def __init__(self, lst=[]):
         super().__init__(lst)
         self.length = super().__len__()
+        self.draw_helper = 800 / len(self)
         self.comps = 0
         self.swaps = 0
         self.writes = 0
@@ -67,6 +68,7 @@ class Array(list):
                            for i in range(len(self))] + [self.max_item]
         self.first = True
         self.color = None
+        self.x_values = [i * self.draw_helper for i in range(len(self) + 1)]
     def stat_check(func):
         "Returns a decorator that raises CancelSort if 'running' is False."
         def decorator(*args, **kwargs):
@@ -132,7 +134,7 @@ class Array(list):
                     canvas.config(bg=BG)
                 self.color = use_color
             new_sounds = []
-            self.passed = -1
+            self.passed -= self.frames
             max_change = self.max_item != self.draw_stats[len(self)]
             if max_change:
                 self.draw_stats[len(self)] = self.max_item
@@ -174,9 +176,9 @@ class Array(list):
                 if stats["value"] != self[i] or max_change:
                     canvas.delete(rect_id)
                     self.draw_stats[i] = {"color": color, "value": self[i],
-                        "id": canvas.create_rectangle(i * (800 / len(self)),
-                        -((600 * (self[i] / self.max_item)) - 600), (i + 1)
-                        * (800 / len(self)), 600, outline=color, fill=color)}
+                        "id": canvas.create_rectangle(self.x_values[i],
+                        600 - (600 * (self[i] / self.max_item)),
+                        self.x_values[i + 1], 600, outline=color, fill=color)}
                 elif stats["color"] != color:
                     canvas.itemconfig(rect_id, outline=color, fill=color)
                     self.draw_stats[i]["color"] = color
@@ -185,7 +187,8 @@ class Array(list):
             for i in new_sounds:
                 i.play()
             self.sounds = new_sounds
-        self.passed += 1
+        else:
+            self.passed += 1
     @stat_check
     def compare(self, i1, i2, refresh=True, analyze=False):
         "Returns 1 if i1 > i2, -1 if i1 < i2, and 0 if i1 == i2."
@@ -216,7 +219,7 @@ class Array(list):
             stop = len(self)
         new = start
         for i in range(start + 1, stop):
-            if arr.compare(new, i, analyze=True) == -1:
+            if self.compare(new, i, analyze=True) == -1:
                 new = i
         return new
     @stat_check
@@ -226,7 +229,7 @@ class Array(list):
             stop = len(self)
         new = start
         for i in range(start + 1, stop):
-            if arr.compare(new, i, analyze=True) == 1:
+            if self.compare(new, i, analyze=True) == 1:
                 new = i
         return new
     @stat_check
@@ -273,8 +276,10 @@ class Array(list):
     @stat_check
     def step(self, lo, hi):
         "Compare (and swap if nexessary) indexes lo and hi."
-        if self.compare(lo, hi) == 1:
+        res = self.compare(lo, hi)
+        if res == 1:
             self.swap(lo, hi)
+        return res
     @stat_check
     def incr_comps(self, incr=1):
         "Increment the comparisons."
@@ -301,6 +306,52 @@ class Array(list):
         "Increment the aux writes."
         self.aux_writes += incr
         aux_writes.config(text="Aux writes: %s" % self.aux_writes)
+    @stat_check
+    def rotate(self, start, length, dest):
+        "Rotate block at index 'start' of length 'length' to index 'dest'."
+        if length > 0:
+            if start < dest:
+                if start + length <= dest:
+                    self._rotate_left(start, length, dest)
+                else:
+                    self._rotate_right(start + length, dest - start, start)
+            elif start > dest:
+                if start - length >= dest:
+                    self._rotate_right(start, length, dest)
+                else:
+                    self._rotate_left(dest, start - dest, dest + length)
+        elif length < 0:
+            raise ValueError("length must be non-negative")
+    @stat_check
+    def _rotate_left(self, start, length, dest):
+        "Internal function, use rotate(start, length, dest)."
+        leftover_right = (dest - start) % length
+        while start < dest:
+            self.swap(start, start + length)
+            start += 1
+        if leftover_right > 0:
+            inverse = length - leftover_right
+            if leftover_right <= inverse:
+                self._rotate_right(start + inverse, leftover_right, start)
+            else:
+                self._rotate_left(start, inverse, start + leftover_right)
+    @stat_check
+    def _rotate_right(self, start, length, dest):
+        "Internal function, use rotate(start, length, dest)."
+        leftover_left = (start - dest) % length
+        while start > dest:
+            start -= 1
+            self.swap(start, start + length)
+        if leftover_left > 0:
+            inverse = length - leftover_left
+            if leftover_left <= inverse:
+                self._rotate_left(start, leftover_left, start + inverse)
+            else:
+                self._rotate_right(start + leftover_left, inverse, start)
+    @stat_check
+    def get_digit(self, value, digit, base):
+        return (value // (base ** digit)) % base
+
 Array.stat_check = staticmethod(Array.stat_check)
 Array.bad_type = staticmethod(Array.bad_type)
 Array.ttc = staticmethod(Array.ttc)
@@ -806,7 +857,7 @@ def RandomValues(arr):
 
 @Shuffle("Quicksort Killer")
 def QuicksortKiller(arr):
-    temp = list(arr)
+    temp = list(arr).copy()
     mid = len(arr) // 2
     stair = 0
     step = 2
@@ -823,6 +874,7 @@ def QuicksortKiller(arr):
         else:
             arr.write(right, temp[i])
             right += 1
+    arr.swap(len(arr) // 2 - 1, len(arr) - 1)
 
 @Shuffle("Shuffled Triangular")
 def ShuffledTriangular(arr):
@@ -841,12 +893,60 @@ def LeftFactorial(arr):
         prod *= i + 2
     arr.reverse()
 
+@Shuffle("Van Eck Sequence")
+def VanEckSequence(arr):
+    current = 0
+    for i in range(len(arr)):
+        arr.write(i, current + 1, update_max=True)
+        for j in range(i - 1, -1, -1):
+            if arr[j] == current + 1:
+                current = i - j
+                break
+        else:
+            current = 0
+
+@Shuffle("Binary Truncation")
+def BinaryTruncation(arr):
+    def get_new(n):
+        while n & 1 == 0:
+            n >>= 1
+        return n
+    for i in range(len(arr)):
+        arr.write(i, get_new(i + 1), update_max=True)
+
+@Shuffle("Biased Random Unique")
+def BiasedRandomUnique(arr):
+    for i in range(len(arr)):
+        new = randrange(len(arr))
+        if i != new:
+            arr.swap(i, new)
+
+@Shuffle("Sawtooth")
+def Sawtooth(arr):
+    def bit_reverse(start, stop): # copy pasted
+        length = stop - start
+        ceil_log = ceil(log(length, 2))
+        for i in range(length):
+            j = 0
+            k = i
+            for l in range(ceil_log, 0, -1):
+                j *= 2
+                j += k % 2
+                k //= 2
+            if j > i and j < length:
+                arr.swap(start + i, start + j)
+    div4 = len(arr) / 4
+    bit_reverse(0, len(arr))
+    bit_reverse(0, int(div4))
+    bit_reverse(int(div4), int(div4 * 2))
+    bit_reverse(int(div4 * 2), int(div4 * 3))
+    bit_reverse(int(div4 * 3), len(arr))
+
 @Sort("Bubble Sort", "Comparison", 2048, True, "n^2", "n^2", "n^2", 1, 1, 1)
 def BubbleSort(arr):
     for i in range(len(arr) - 1):
         for j in range(len(arr) - 1):
-            if arr.compare(j, j + 1) == 1:
-                arr.swap(j, j + 1)
+            arr.step(j, j + 1)
 
 @Sort("Insertion Sort", "Comparison", 2048, True, "n", "n^2", "n^2")
 def InsertionSort(arr):
@@ -881,7 +981,7 @@ def TimeInsertionSort(arr, mult=0.00035):
         arr.write(index, n)
         index += 1
     async def main():
-        await aio_gather(*[write_to_arr(arr.get(i)) for i in range(len(arr))])
+        await aio_gather(*(write_to_arr(arr.get(i)) for i in range(len(arr))))
     aio_run(main())
     InsertionSort(arr)
 
@@ -1573,7 +1673,8 @@ def PartitionMergeSort(arr):   # only works on power of 2 lengths, linear dist
     length = len(arr)
     wrapper(length // 4, length // 2, length)
 
-@Sort("New Partition Merge Sort")
+# DORMANT, UNFINISHED
+"""@Sort("New Partition Merge Sort")
 def NewPartitionMergeSort(arr):
     def partition(stop):
         average = 0
@@ -1603,7 +1704,7 @@ def NewPartitionMergeSort(arr):
         if buffer < len(arr) - 2:
             arr.swap(buffer, buffer + 2)
     print(partition(len(arr)))
-    pairwise_swaps(len(arr) // 2 - 2)
+    pairwise_swaps(len(arr) // 2 - 2)"""
 
 @Sort("Bitonic Sort")
 def BitonicSort(arr):
@@ -2187,22 +2288,264 @@ def MSDRadixMergeSort(arr):
     def wrapper(start, stop, digit, recurse):
         if stop - start >= 2 and digit >= 0:
             mid = (stop - start) // 2 + start
-            wrapper(start, mid, digit, False)
-            wrapper(mid, stop, digit, False)
-            i = start
-            while i < mid and ((arr.get(i) - decr) >> digit) & 1 == 0:
-                i += 1
-            j = mid
-            while j < stop and ((arr.get(j) - decr) >> digit) & 1 == 0:
-                if i != j:
-                    arr.swap(i, j)
-                i += 1
-                j += 1
+            left = wrapper(start, mid, digit, False)
+            right = wrapper(mid, stop, digit, False)
+            if left < mid:
+                gap = right - mid
+                if gap <= mid - left:
+                    i = left
+                    for j in range(mid, right):
+                        arr.swap(i, j)
+                        i += 1
+                else:
+                    i = left + gap
+                    for j in range(left, mid):
+                        arr.swap(j, j + gap)
+            else:
+                i = right
             if recurse:
                 wrapper(start, i, digit - 1, True)
                 wrapper(i, stop, digit - 1, True)
+            return i
+        elif digit >= 0 and stop - start == 1:
+            if (arr.get(start) - decr) >> digit & 1 == 1:
+                return start
+            else:
+                return stop
+        else:
+            return -1
     decr = arr[arr.get_min()]
     wrapper(0, len(arr), int(log(arr[arr.get_max()] - decr, 2)), True)
+
+@Sort("LSD Radix Merge Sort")
+def LSDRadixMergeSort(arr):   # mostly just to show off my rotate function :p
+    def wrapper(start, stop):
+        if stop - start >= 2:
+            mid = (stop - start) // 2 + start
+            left = wrapper(start, mid)
+            right = wrapper(mid, stop)
+            pos = right - mid + left
+            arr.rotate(left, mid - left, pos)
+            return pos
+        elif stop - start == 1:
+            return start if ((arr.get(start) - decr) >> d) & 1 else stop
+    try:
+        decr = arr[arr.get_min()]
+        for d in range(int(log(arr[arr.get_max()] - decr, 2)) + 1):
+            wrapper(0, len(arr))
+    except:
+        pass   # all values are identical, array is already sorted
+
+@Sort("Improved Selection Network")
+def ImprovedSelectionNetwork(arr):
+    start, stop = 0, len(arr)
+    while stop - start >= 2:
+        j = 1
+        while j < stop - start:
+            for i in range(start, stop - j, j * 2):
+                arr.step(i, i + j)
+            j *= 2
+        start += 1
+        if stop - start < 2:
+            break
+        j = 1
+        while j < stop - start:
+            for i in range(stop - 1, start - 1 + j, j * -2):
+                arr.step(i - j, i)
+            j *= 2
+        stop -= 1
+
+@Sort('"Bottom Up" Stooge Sort')
+def BottomUpStoogeSort(arr):
+    async def wrapper(start, stop):
+        if stop - start + 1 >= 2:
+            arr.step(start, stop)
+            if stop - start + 1 >= 3:
+                await aio_gather(
+                    wrapper(start, ceil(stop - ((stop - start + 1) / 3))),
+                    wrapper(floor(start + ((stop - start + 1) / 3)), stop),
+                    wrapper(start, ceil(stop - ((stop - start + 1) / 3)))
+                )
+    aio_run(wrapper(0, len(arr) - 1))
+
+@Sort("Optimized Weave Merge Sort")
+def OptimizedWeaveMergeSort(arr):
+    def insertion(start, stop):
+        for i in range(start, stop - 1):
+            while i >= start and arr.compare(i, i + 1) == 1:
+                arr.swap(i, i + 1)
+                i -= 1
+    def bit_reverse(start, stop):
+        length = stop - start
+        ceil_log = ceil(log(length, 2))
+        for i in range(length):
+            j = 0
+            k = i
+            for l in range(ceil_log, 0, -1):
+                j *= 2
+                j += k % 2
+                k //= 2
+            if j > i and j < length:
+                arr.swap(start + i, start + j)
+    def wrapper(start, stop):
+        if stop - start >= 2:
+            mid = (stop - start) // 2 + start
+            wrapper(start, mid)
+            wrapper(mid, stop)
+            bit_reverse(start, mid)
+            bit_reverse(mid, stop)
+            bit_reverse(start, stop)
+            insertion(start, stop)
+    wrapper(0, len(arr))
+
+@Sort("Fun Insertion Sort")
+def FunInsertionSort(arr):
+    pos = len(arr) - 1
+    while pos:
+        current = pos
+        while current >= 1 and arr.compare(current - 1, current) == 1:
+            arr.swap(current - 1, current)
+            current -= 1
+        if current == pos:
+            pos -= 1
+        elif pos < len(arr) - 1:
+            pos += 1
+
+@Sort("Bad Sort")
+def BadSort(arr):
+    for i in range(len(arr) - 1):
+        for j in range(i, len(arr)):
+            for k in range(j + 1, len(arr)):
+                if arr.compare(j, k) == 1:
+                    break
+            else:
+                break
+        if i != j:
+            arr.swap(i, j)
+
+@Sort("Unstable Grail Sort")
+def UnstableGrailSort(arr):
+    def pairwise_merge(buffer, left, right):
+        if arr.compare(left, right) == 1:
+            arr.swap(buffer, right)
+            arr.swap(buffer + 1, left)
+        else:
+            arr.swap(buffer, left)
+            arr.swap(buffer + 1, right)
+    def first_merges(buffer):
+        while buffer + 3 < len(arr):
+            pairwise_merge(buffer, buffer + 2, buffer + 3)
+            buffer += 2
+        if buffer + 2 < len(arr):
+            arr.swap(buffer, buffer + 2)
+    def buffered_merge(buffer, left, right, stop, check_left=False):
+        orig_right = right
+        while left < orig_right and right < stop:
+            if arr.compare(left, right) == 1:
+                arr.swap(buffer, right)
+                right += 1
+            else:
+                arr.swap(buffer, left)
+                left += 1
+            buffer += 1
+        if check_left:
+            while left < orig_right:
+                arr.swap(buffer, left)
+                buffer += 1
+                left += 1
+        while right < stop:
+            arr.swap(buffer, right)
+            buffer += 1
+            right += 1
+    def smart_merges(buffer, stop):
+        size = 2
+        while buffer >= 0:
+            new = buffer
+            while new + size * 3 <= stop:
+                buffered_merge(new, new + size, new + size * 2, new + size * 3)
+                new += size * 2
+            if new + size * 2 < stop:
+                buffered_merge(new, new + size, new + size * 2, stop, True)
+            else:
+                while new + size < stop:
+                    arr.swap(new, new + size)
+                    new += 1
+            stop -= size
+            size *= 2
+            buffer -= size
+    def backwards_merge(stop, left, right, buffer, check_right=False):
+        orig_left = left
+        while right > orig_left and left > stop:
+            if arr.compare(left, right) == 1:
+                arr.swap(left, buffer)
+                left -= 1
+            else:
+                arr.swap(right, buffer)
+                right -= 1
+            buffer -= 1
+        if check_right:
+            while right > orig_left:
+                arr.swap(right, buffer)
+                buffer -= 1
+                right -= 1
+        while left > stop:
+            arr.swap(left, buffer)
+            buffer -= 1
+            left -= 1
+    def back_smart_merges(initial):
+        new = len(arr) - 1
+        if (ceil(len(arr) / block_size) - 1) % 2 == 0:
+            if initial > 0:
+                backwards_merge(new - block_size * 2 - initial,
+                                new - block_size - initial, new - block_size,
+                                new, True)
+                new -= initial + block_size
+        else:
+            for i in range(initial if initial > 0 else block_size):
+                arr.swap(new - block_size, new)
+                new -= 1
+        while new - block_size * 3 >= -1:
+            backwards_merge(new - block_size * 3, new - block_size * 2,
+                            new - block_size, new)
+            new -= block_size * 2
+        while new >= block_size:
+            arr.swap(new - block_size, new)
+            new -= 1
+    if len(arr) < 16:
+        InsertionSort(arr)
+    else:
+        block_size = 4
+        while block_size < sqrt(len(arr)):
+            block_size *= 2
+        first_merges(block_size - 2)
+        smart_merges(block_size - 4, len(arr) - 2)
+        back_smart_merges(len(arr) % block_size)
+
+@Sort("Stable Average Quick Sort")
+def StableAverageQuickSort(arr):
+    def wrapper(start, stop, recurse):
+        length = stop - start
+        if length >= 2:
+            if recurse:
+                nonlocal mult, pivot
+                mult = length
+                pivot = sum(map(arr.get, range(start, stop)))
+            mid = length // 2 + start
+            left = wrapper(start, mid, False)
+            right = wrapper(mid, stop, False)
+            pos = right - mid + left
+            arr.rotate(left, mid - left, pos)
+            if recurse and start < pos < stop:
+                wrapper(start, pos, True)
+                wrapper(pos, stop, True)
+            return pos
+        elif length == 1:
+            arr.incr_comps()
+            arr.refresh(start)
+            new = arr[start] * mult
+            return start if new > pivot else stop
+    mult = pivot = None
+    wrapper(0, len(arr), True)
 
 # ------------------------------------------------------------------------------
 
